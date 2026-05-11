@@ -14,16 +14,16 @@ export const viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Delphin Associates app",
+  title: "Delphin Associates",
   description: "Enterprise Construction Daily Site Monitoring System",
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Delphin App',
+    title: 'Delphin Associates',
   },
   icons: {
-    apple: '/icon-square.png',
+    apple: '/appstore-images/ios/180.png',
   }
 };
 
