@@ -3,12 +3,12 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getCurrentISTDateString } from '@/lib/date-utils';
+import { verifyAuth } from '@/lib/security';
 
 export async function getSupervisorSites(clientDate?: string) {
   try {
+    await verifyAuth()
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return []
 
     const adminClient = createAdminClient()
 
@@ -33,14 +33,15 @@ export async function getSupervisorSites(clientDate?: string) {
       siteLocation: s.site_location,
       exemptedToday: exemptedIds.has(s.site_id)
     })) || []
-  } catch (error) {
-    console.error('getSupervisorSites error:', error)
-    return []
-  }
+    } catch (error) {
+      console.error('getSupervisorSites failure')
+      return []
+    }
 }
 
 export async function getTodayHoliday() {
   try {
+    await verifyAuth()
     const adminClient = createAdminClient()
     const today = getCurrentISTDateString()
     const { data } = await adminClient
@@ -57,9 +58,8 @@ export async function getTodayHoliday() {
 
 export async function getPendingDates(siteId: number, clientDate?: string) {
   try {
+    await verifyAuth()
     const adminClient = createAdminClient()
-    const { data: { user } } = await (await createClient()).auth.getUser()
-    if (!user) return []
 
     // 1. Get site creation date
     const { data: site } = await adminClient
@@ -128,22 +128,27 @@ export async function getPendingDates(siteId: number, clientDate?: string) {
 
     return dates.filter(d => {
       if (existingDates.has(d)) return false;
-      // if (holidayDates.has(d)) return false;
+
+      // Check if it's a Sunday
+      const [y, m, day] = d.split('-').map(Number);
+      const dateObj = new Date(y, m - 1, day);
+      if (dateObj.getDay() === 0) return false;
+
+      if (holidayDates.has(d)) return false;
       if (adminExemptions.has(d)) return false;
       if (supervisorSkips.has(d)) return false;
       return true;
     });
-  } catch (error) {
-    console.error('getPendingDates error:', error)
-    return []
-  }
+    } catch (error) {
+      console.error('getPendingDates failure')
+      return []
+    }
 }
 
 export async function skipDate(siteId: number, date: string) {
   try {
+    await verifyAuth()
     const adminClient = createAdminClient()
-    const { data: { user } } = await (await createClient()).auth.getUser()
-    if (!user) return { error: 'Unauthorized' }
 
     const { error } = await adminClient
       .from('work_allocations')
@@ -163,9 +168,8 @@ export async function skipDate(siteId: number, date: string) {
 
 export async function revokeSkipDate(siteId: number, date: string) {
   try {
+    await verifyAuth()
     const adminClient = createAdminClient()
-    const { data: { user } } = await (await createClient()).auth.getUser()
-    if (!user) return { error: 'Unauthorized' }
 
     const { error } = await adminClient
       .from('work_allocations')
@@ -183,9 +187,8 @@ export async function revokeSkipDate(siteId: number, date: string) {
 
 export async function submitDailyReport(payload: any) {
   try {
+    const user = await verifyAuth()
     const adminClient = createAdminClient()
-    const { data: { user } } = await (await createClient()).auth.getUser()
-    if (!user) return { error: 'Unauthorized' }
 
     const username = user.email?.split('@')[0]
     const { data: profile } = await adminClient
@@ -291,9 +294,7 @@ export async function submitDailyReport(payload: any) {
 
 export async function getMyReports() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return []
+    const user = await verifyAuth()
 
     const username = user.email?.split('@')[0]
     const adminClient = createAdminClient()
@@ -338,6 +339,7 @@ export async function getMyReports() {
 
 export async function getReportDetails(id: number) {
   try {
+    await verifyAuth()
     const adminClient = createAdminClient()
     const { data, error } = await adminClient
       .from('daily_reports')
@@ -394,9 +396,8 @@ export async function getReportDetails(id: number) {
 
 export async function updateDailyReport(id: number, payload: any) {
   try {
+    await verifyAuth()
     const adminClient = createAdminClient()
-    const { data: { user } } = await (await createClient()).auth.getUser()
-    if (!user) return { error: 'Unauthorized' }
 
     const { data: report } = await adminClient
       .from('daily_reports')
@@ -406,16 +407,25 @@ export async function updateDailyReport(id: number, payload: any) {
 
     if (!report) return { error: 'Report not found' }
 
-    const reportDate = report.report_date
+    const reportDateStr = report.report_date
     const createdAt = new Date(report.created_at)
     const now = new Date()
-    const todayStr = getCurrentISTDateString()
 
-    if (reportDate !== todayStr) {
-      const diffInHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60)
-      if (diffInHours > 4) {
-        return { error: 'Missing day reports are frozen 4 hours after submission.' }
-      }
+    // Normalize for date comparison
+    const reportDate = new Date(reportDateStr + 'T00:00:00')
+    const createdDateOnly = new Date(createdAt.getFullYear(), createdAt.getMonth(), createdAt.getDate())
+    
+    let freezeAt: Date
+    if (createdDateOnly.getTime() === reportDate.getTime()) {
+      // Case 1: On-time -> Frozen at midnight of creation day
+      freezeAt = new Date(createdDateOnly.getTime() + 24 * 60 * 60 * 1000)
+    } else {
+      // Case 2: Delayed -> Frozen 4 hours after creation
+      freezeAt = new Date(createdAt.getTime() + 4 * 60 * 60 * 1000)
+    }
+
+    if (now.getTime() > freezeAt.getTime()) {
+      return { error: 'Modification window expired. This report is now permanently sealed.' }
     }
 
     const { error: reportError } = await adminClient
@@ -483,6 +493,7 @@ export async function updateDailyReport(id: number, payload: any) {
 }
 
 export async function getSupervisorReportCount(supervisorId: number) {
+  await verifyAuth()
   const adminClient = createAdminClient()
   const { count } = await adminClient
     .from('daily_reports')

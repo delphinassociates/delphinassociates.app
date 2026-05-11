@@ -23,10 +23,11 @@ export async function proxy(request: NextRequest) {
     }
   )
 
+  const pathname = request.nextUrl.pathname
+
   try {
     const { data: { user } } = await supabase.auth.getUser()
 
-    const pathname = request.nextUrl.pathname
     const isLoginPage = pathname === '/login' || pathname === '/'
     const isAdminPath = pathname.startsWith('/admin')
     const isSupervisorPath = pathname.startsWith('/supervisor')
@@ -63,8 +64,18 @@ export async function proxy(request: NextRequest) {
       }
     }
   } catch (err) {
-    console.error('Middleware error:', err)
+    console.error('Middleware failure')
     // On error, let the request through or redirect to login as safety
+  }
+
+  // ── Set Security Headers ──
+  supabaseResponse.headers.set('X-Frame-Options', 'DENY')
+  supabaseResponse.headers.set('X-Content-Type-Options', 'nosniff')
+  supabaseResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+  
+  // Prevent caching of authenticated routes to protect sensitive data
+  if (pathname.startsWith('/admin') || pathname.startsWith('/supervisor')) {
+    supabaseResponse.headers.set('Cache-Control', 'no-store, max-age=0')
   }
 
   return supabaseResponse

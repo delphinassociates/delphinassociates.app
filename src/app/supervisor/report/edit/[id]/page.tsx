@@ -50,14 +50,26 @@ export default function EditReportPage({ params }: { params: Promise<{ id: strin
         const report = reportData;
         if (!report) throw new Error('Report not found');
         
-        // Check if report is frozen (Refined Policy)
-        const reportDateStr = report.reportDate;
+        // Check if report is frozen (Synchronized with List View Policy)
+        const reportDateStr = report.reportDate; // e.g. "2024-05-02"
         const createdAt = new Date(report.createdAt);
-        const freezeAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
         const now = new Date();
+        
+        // Convert reportDate string to Date object (start of that day)
+        const reportDate = new Date(reportDateStr + 'T00:00:00');
+        const createdDateOnly = new Date(createdAt.getFullYear(), createdAt.getMonth(), createdAt.getDate());
+        
+        let freezeAt: Date;
+        if (createdDateOnly.getTime() === reportDate.getTime()) {
+          // Case 1: On-time -> Freeze at midnight of the creation day
+          freezeAt = new Date(createdDateOnly.getTime() + 24 * 60 * 60 * 1000);
+        } else {
+          // Case 2: Delayed -> Freeze after 4 hours
+          freezeAt = new Date(createdAt.getTime() + 4 * 60 * 60 * 1000);
+        }
 
         if (now > freezeAt) {
-          toast.error('Reporting window expired. Reports are frozen 24 hours after submission.');
+          toast.error('Reporting window expired. This log is now sealed.');
           router.push('/supervisor/reports');
           return;
         }
@@ -97,10 +109,10 @@ export default function EditReportPage({ params }: { params: Promise<{ id: strin
         router.push('/supervisor/reports');
         return false;
       } else {
-        const hours = Math.floor(distance / (1000 * 60 * 60));
+        const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
         const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-        setTimeLeft(`${hours}h ${minutes}m ${seconds}s`);
+        setTimeLeft(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
         return true;
       }
     };

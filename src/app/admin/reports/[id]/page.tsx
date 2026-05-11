@@ -9,6 +9,7 @@ import { ArrowLeft, Users, Package, Wallet, FileText, Calendar, Building2, Trash
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/ui/custom/PageHeader';
 import { ConfirmationDialog } from '@/components/ui/custom/ConfirmationDialog';
+import { createClient } from '@/lib/supabase/client';
 
 export default function ReportDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params);
@@ -19,26 +20,41 @@ export default function ReportDetailsPage({ params }: { params: Promise<{ id: st
   const router = useRouter();
 
   useEffect(() => {
+    let isMounted = true;
+
     const fetchReport = async () => {
       try {
         const data = await getReportDetails(parseInt(id));
+        if (!isMounted) return;
         if (!data) throw new Error('Not found');
         setReport(data);
-      } catch (error) {
-        // Only redirect on first load failure
-        if (loading) {
-          toast.error('Failed to load report data');
-          router.push('/admin/reports');
-        }
+      } catch {
+        if (!isMounted) return;
+        toast.error('Failed to load report data');
+        router.push('/admin/reports');
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     fetchReport();
-    const interval = setInterval(fetchReport, 10000);
-    return () => clearInterval(interval);
-  }, [id, router, loading]);
+
+    // Realtime subscription — only re-fetches when THIS report actually changes
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`report_detail_${id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'daily_reports', filter: `report_id=eq.${id}` },
+        () => { if (isMounted) fetchReport(); }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [id, router]);
 
   const confirmDelete = async () => {
     try {
@@ -127,11 +143,11 @@ Generated on ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
 
   return (
     <div className="max-w-[1400px] mx-auto animate-in fade-in duration-500 pb-12">
-      <div className="mb-6 flex items-center justify-between">
-        <Button variant="ghost" onClick={() => router.push('/admin/reports')} className="text-muted-foreground hover:text-accent px-0 hover:bg-transparent transition-colors">
+      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <Button variant="ghost" onClick={() => router.push('/admin/reports')} className="text-muted-foreground hover:text-accent px-0 hover:bg-transparent transition-colors self-start">
           <ArrowLeft size={16} className="mr-2" /> Back to Intelligence Log
         </Button>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Button 
             variant="ghost" 
             onClick={copyToClipboard}

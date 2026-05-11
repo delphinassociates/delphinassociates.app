@@ -28,6 +28,7 @@ export const metadata: Metadata = {
 };
 
 import { NotificationProvider } from "@/context/NotificationContext";
+import { DevToolsProtection } from "@/components/ui/custom/DevToolsProtection";
 
 export default function RootLayout({
   children,
@@ -37,6 +38,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${montserrat.variable} dark`}>
       <body className={`font-sans bg-background text-foreground antialiased`}>
+        <DevToolsProtection />
         <AuthProvider>
           <NotificationProvider>
             {children}

@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/ui/custom/PageHeader';
 import { getProfile } from '@/app/actions/auth';
+import { getSupervisorReportCount } from '@/app/actions/supervisor';
 
 export default function SupervisorDashboard() {
   const { user } = useAuth();
@@ -40,9 +41,7 @@ export default function SupervisorDashboard() {
         }
 
         // Fetch count via server action to bypass RLS issues
-        const { getSupervisorReportCount } = await import('@/app/actions/supervisor');
         const count = await getSupervisorReportCount(activeUser.id);
-        console.log(`[Dashboard] Fetched count via server: ${count}`);
         setReportCount(count);
         
       } catch (err) {
@@ -61,13 +60,12 @@ export default function SupervisorDashboard() {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'daily_reports', filter: `supervisor_id=eq.${user.id}` },
-          (payload) => {
-            console.log('[Dashboard] Real-time change detected:', payload);
+          () => {
             fetchData();
           }
         )
-        .subscribe((status) => {
-          console.log('[Dashboard] Real-time subscription status:', status);
+        .subscribe(() => {
+          // Channel active
         });
 
       return () => {

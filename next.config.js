@@ -1,7 +1,19 @@
 /** @type {import('next').NextConfig} */
 
 const nextConfig = {
+  // Enable gzip/brotli HTTP response compression
+  compress: true,
+  // Remove the X-Powered-By: Next.js header (minor perf + security)
+  poweredByHeader: false,
   allowedDevOrigins: ['*', 'localhost', '192.168.0.*', '10.147.*.*', '192.168.1.*'],
+  experimental: {
+    // Tree-shake large libraries — only bundle symbols that are actually imported
+    optimizePackageImports: ['lucide-react', 'recharts'],
+  },
+  productionBrowserSourceMaps: false,
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production',
+  },
   async headers() {
     return [
       {
@@ -18,6 +30,7 @@ const nextConfig = {
 };
 
 module.exports = nextConfig;
+
 
 
 

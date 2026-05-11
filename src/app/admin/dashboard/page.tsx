@@ -116,7 +116,7 @@ export default function AdminDashboard() {
       setPendingSites(pend);
       setExemptedSites(ex);
     } catch (err) {
-      console.error('Failed to refresh state', err);
+      toast.error('Real-time sync failed');
     }
   };
 
@@ -137,7 +137,7 @@ export default function AdminDashboard() {
       setRemainingStock(stock);
       setAllSites(sites);
     } catch (err) {
-      console.error('Dashboard fetch error', err);
+      toast.error('Dashboard data fetch failed');
     } finally {
       if (!isSilent) setLoading(false);
     }
@@ -160,7 +160,7 @@ export default function AdminDashboard() {
       setSiteReportCount(siteCnt);
       setRangeSummary(rangeSum);
     } catch (err) {
-      console.error('Chart filter error', err);
+      toast.error('Chart filter failed');
     } finally {
       if (!isSilent) setChartsLoading(false);
     }
@@ -241,8 +241,12 @@ export default function AdminDashboard() {
     { label: 'Labour Advances',   value: `₹${rangeSummary?.totalLabourAdvance ?? 0}`,   icon: Wallet    },
   ];
 
-  const submissionRate = summary?.overallComplianceRate ?? 0;
-  const sitesPending   = summary?.totalPendingCount  ?? 0;
+  const submissionRate = (() => {
+    const submitted = summary?.submittedInWindow || 0;
+    const total = submitted + pendingSites.length;
+    return total === 0 ? 100 : Math.round((submitted * 100) / total);
+  })();
+  const sitesPending   = pendingSites.length;
   const isHoliday      = summary?.todayIsHoliday     ?? false;
   const holidayName    = summary?.holidayName;
 

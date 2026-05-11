@@ -7,9 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Plus, Edit2, Trash2, MapPin, Building, User } from 'lucide-react';
+import { Plus, Edit2, Trash2, MapPin, Building, User, AlertTriangle, X } from 'lucide-react';
 import { PageHeader } from '@/components/ui/custom/PageHeader';
 import { SectionHeading } from '@/components/ui/custom/SectionHeading';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function SitesPage() {
   const [sites, setSites] = useState([]);
@@ -73,14 +74,26 @@ export default function SitesPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Warning: Deleting a site removes all associated reports. Proceed?')) return;
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [siteToDelete, setSiteToDelete] = useState<any>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+
+  const handleDeleteClick = (site: any) => {
+    setSiteToDelete(site);
+    setDeleteConfirmInput('');
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!siteToDelete || deleteConfirmInput !== siteToDelete.siteName) return;
+    
     try {
-      await deleteSite(id);
-      toast.success('Site decommissioned');
+      await deleteSite(siteToDelete.siteId);
+      toast.success('Site and associated data removed');
+      setIsDeleteDialogOpen(false);
       fetchSites();
     } catch {
-      toast.error('Failed to decommission site');
+      toast.error('Failed to remove site');
     }
   };
 
@@ -146,7 +159,7 @@ export default function SitesPage() {
             </h4>
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
               <div className="space-y-2 md:space-y-3">
-                <Label className="text-[10px] md:text-xs uppercase tracking-widest text-muted-foreground">Site Designation</Label>
+                <Label className="text-[10px] md:text-xs uppercase tracking-widest text-muted-foreground">Site Name</Label>
                 <Input className="bg-background/50 border-border h-10 md:h-12 text-sm md:text-base focus:border-accent" value={siteName} onChange={e => setSiteName(e.target.value)} required />
               </div>
               <div className="space-y-2 md:space-y-3">
@@ -154,7 +167,7 @@ export default function SitesPage() {
                 <Input className="bg-background/50 border-border h-10 md:h-12 text-sm md:text-base focus:border-accent" value={siteLocation} onChange={e => setSiteLocation(e.target.value)} required />
               </div>
               <div className="space-y-2 md:space-y-3">
-                <Label className="text-[10px] md:text-xs uppercase tracking-widest text-muted-foreground">Client Organization</Label>
+                <Label className="text-[10px] md:text-xs uppercase tracking-widest text-muted-foreground">Client Name</Label>
                 <Input className="bg-background/50 border-border h-10 md:h-12 text-sm md:text-base focus:border-accent" value={clientName} onChange={e => setClientName(e.target.value)} required />
               </div>
               <div className="space-y-2 md:space-y-3">
@@ -275,7 +288,7 @@ export default function SitesPage() {
                     </Button>
                     <Button
                       variant="ghost" size="sm"
-                      onClick={() => handleDelete(site.siteId)}
+                      onClick={() => handleDeleteClick(site)}
                       className="h-7 md:h-8 px-2 md:px-2.5 text-[10px] md:text-xs text-muted-foreground hover:text-red-400 hover:bg-red-400/10 rounded-lg gap-1 md:gap-1.5"
                     >
                       <Trash2 className="w-[11px] h-[11px] md:w-[12px] md:h-[12px]" /> Remove
@@ -287,6 +300,80 @@ export default function SitesPage() {
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {isDeleteDialogOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-md p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="glass-panel w-full max-w-md p-6 rounded-2xl border border-red-500/20 shadow-2xl relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500/0 via-red-500 to-red-500/0" />
+              
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                  <AlertTriangle className="text-red-500" size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-display font-bold text-foreground uppercase tracking-wider">Confirm Removal</h3>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Dangerous Action</p>
+                </div>
+                <button 
+                  onClick={() => setIsDeleteDialogOpen(false)}
+                  className="ml-auto p-2 text-muted-foreground hover:text-white transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-red-500/5 border border-red-500/10 p-4 rounded-xl">
+                  <p className="text-xs text-red-200/70 leading-relaxed">
+                    This action is <span className="font-bold text-red-400 underline">permanent</span>. Removing this site will immediately purge all associated daily reports, material logs, and workforce data from the central database.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Type <span className="text-foreground font-bold normal-case px-1 bg-white/5 rounded border border-white/10">{siteToDelete?.siteName}</span> to confirm
+                  </Label>
+                  <Input 
+                    placeholder="Enter site name"
+                    className="bg-background/40 border-border focus:border-red-500 h-12 text-sm font-medium"
+                    value={deleteConfirmInput}
+                    onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <Button 
+                    variant="ghost" 
+                    className="flex-1 h-12 text-xs font-bold uppercase tracking-widest"
+                    onClick={() => setIsDeleteDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    className="flex-1 h-12 bg-red-500 hover:bg-red-600 text-white text-xs font-bold uppercase tracking-widest disabled:opacity-30 disabled:cursor-not-allowed"
+                    disabled={deleteConfirmInput !== siteToDelete?.siteName}
+                    onClick={handleConfirmDelete}
+                  >
+                    Delete Site
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

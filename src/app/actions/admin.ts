@@ -3,35 +3,44 @@
 import { createClient } from '@/lib/supabase/server'
 import { DailyReport, Site, User, WorkAllocation } from '@/types/database'
 import { getCurrentISTDateString } from '@/lib/date-utils'
+import { verifyAdmin, verifyAuth } from '@/lib/security'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function getDashboardSummary() {
-  const supabase = await createClient()
-
-  // 1. Total Active Sites
-  const { data: activeSites } = await supabase
-    .from('sites')
-    .select('*')
-    .eq('status', 'ACTIVE')
-
-  const activeSitesCount = activeSites?.length || 0
-
-  // 2. Total Supervisors
-  const { count: totalSupervisors } = await supabase
-    .from('users')
-    .select('*', { count: 'exact', head: true })
-    .eq('role', 'SUPERVISOR')
-
-  // 3. Today's submissions (IST)
+  await verifyAdmin()
+  const adminClient = createAdminClient()
   const today = getCurrentISTDateString()
-  const { data: todayReports } = await supabase
-    .from('daily_reports')
-    .select(`
-      labour_entries(count),
-      labour_advance_entries(amount),
-      material_expense_entries(amount)
-    `)
-    .eq('report_date', today)
-    .eq('deleted', false)
+
+  // Pre-compute date range for compliance window (pure math, no DB needed)
+  const todayDate = new Date(today)
+  const earliestDate = new Date(todayDate)
+  earliestDate.setDate(earliestDate.getDate() - 30)
+  const year = earliestDate.getFullYear();
+  const month = String(earliestDate.getMonth() + 1).padStart(2, '0');
+  const day = String(earliestDate.getDate()).padStart(2, '0');
+  const earliestStr = `${year}-${month}-${day}`;
+
+  // Run all 5 independent DB queries in parallel
+  const [
+    { data: activeSites },
+    { count: totalSupervisors },
+    { data: todayReports },
+    { data: holiday },
+    { count: submittedInWindow }
+  ] = await Promise.all([
+    adminClient.from('sites').select('site_id').eq('status', 'ACTIVE'),
+    adminClient.from('users').select('*', { count: 'exact', head: true }).eq('role', 'SUPERVISOR'),
+    adminClient.from('daily_reports')
+      .select('labour_entries(count), labour_advance_entries(amount), material_expense_entries(amount)')
+      .eq('report_date', today)
+      .eq('deleted', false),
+    adminClient.from('holidays').select('name').eq('date', today).single(),
+    adminClient.from('daily_reports')
+      .select('*', { count: 'exact', head: true })
+      .eq('deleted', false)
+      .gte('report_date', earliestStr)
+      .lte('report_date', today)
+  ])
 
   let totalLabourToday = 0
   let todayLabourAdvance = 0
@@ -43,58 +52,29 @@ export async function getDashboardSummary() {
     r.material_expense_entries?.forEach((me: any) => todayMaterialExpense += Number(me.amount))
   })
 
-  // 4. Holiday check
-  const { data: holiday } = await supabase
-    .from('holidays')
-    .select('name')
-    .eq('date', today)
-    .single()
+  const isSunday = new Date(today).getDay() === 0
 
-  // 5. Compliance Monitoring (Pending Reports)
-  const allPending = await getPendingSites()
-  const totalPendingCount = allPending.length
-
-  // Overall Compliance Rate (Last 30 Days)
-  const todayStr = getCurrentISTDateString()
-  const todayDate = new Date(todayStr)
-  const earliestDate = new Date(todayDate)
-  earliestDate.setDate(earliestDate.getDate() - 30)
-  
-  const year = earliestDate.getFullYear();
-  const month = String(earliestDate.getMonth() + 1).padStart(2, '0');
-  const day = String(earliestDate.getDate()).padStart(2, '0');
-  const earliestStr = `${year}-${month}-${day}`;
-
-  const { count: submittedInWindow } = await supabase
-    .from('daily_reports')
-    .select('*', { count: 'exact', head: true })
-    .eq('deleted', false)
-    .gte('report_date', earliestStr)
-    .lte('report_date', todayStr)
-
-  const totalExpectedReports = (submittedInWindow || 0) + totalPendingCount
-  const overallComplianceRate = totalExpectedReports === 0 ? 100 : Math.round(((submittedInWindow || 0) * 100) / totalExpectedReports)
-
-  const isSunday = new Date(todayStr).getDay() === 0
-
+  // NOTE: totalPendingCount and overallComplianceRate are now computed on the
+  // dashboard client from the separately-fetched pendingSites array. This
+  // removes the duplicate getPendingSites() call that was happening here.
   return {
-    totalActiveSites: activeSitesCount,
+    totalActiveSites: activeSites?.length || 0,
     totalSupervisors: totalSupervisors || 0,
     todaySubmittedReports: todayReports?.length || 0,
     totalLabourToday,
     todayLabourAdvance,
     todayMaterialExpense,
-    totalPendingCount,
-    overallComplianceRate,
+    submittedInWindow: submittedInWindow || 0,
     todayIsHoliday: !!holiday || isSunday,
     holidayName: holiday?.name || (isSunday ? 'Sunday (Weekly Off)' : null)
   }
 }
 
 export async function getRangeSummary(from: string, to: string, siteId?: string) {
-  const supabase = await createClient()
+  await verifyAdmin()
+  const adminClient = createAdminClient()
 
-  let query = supabase
+  let query = adminClient
     .from('daily_reports')
     .select(`
       report_id,
@@ -132,9 +112,10 @@ export async function getRangeSummary(from: string, to: string, siteId?: string)
 }
 
 export async function getLabourTrend(from: string, to: string, siteId?: string) {
-  const supabase = await createClient()
+  await verifyAdmin()
+  const adminClient = createAdminClient()
 
-  let query = supabase
+  let query = adminClient
     .from('daily_reports')
     .select('report_date, labour_entries(count)')
     .eq('deleted', false)
@@ -160,9 +141,10 @@ export async function getLabourTrend(from: string, to: string, siteId?: string) 
 }
 
 export async function getExpenseTrend(from: string, to: string, siteId?: string) {
-  const supabase = await createClient()
+  await verifyAdmin()
+  const adminClient = createAdminClient()
 
-  let query = supabase
+  let query = adminClient
     .from('daily_reports')
     .select('report_date, material_expense_entries(amount)')
     .eq('deleted', false)
@@ -188,9 +170,10 @@ export async function getExpenseTrend(from: string, to: string, siteId?: string)
 }
 
 export async function getMaterialTrend(from: string, to: string, siteId?: string) {
-  const supabase = await createClient()
+  await verifyAdmin()
+  const adminClient = createAdminClient()
 
-  let query = supabase
+  let query = adminClient
     .from('daily_reports')
     .select('report_date, material_inward_entries(quantity)')
     .eq('deleted', false)
@@ -216,35 +199,36 @@ export async function getMaterialTrend(from: string, to: string, siteId?: string
 }
 
 export async function getRemainingStock() {
-  const supabase = await createClient()
+  await verifyAdmin()
+  const adminClient = createAdminClient()
+  const { data: sites } = await adminClient.from('sites').select('site_id').eq('status', 'ACTIVE')
 
-  // 1. Get all active sites
-  const { data: sites } = await supabase.from('sites').select('site_id').eq('status', 'ACTIVE')
-  
-  const aggregatedStock: Record<string, number> = {}
+  if (!sites || sites.length === 0) return []
 
-  if (sites) {
-    for (const site of sites) {
-      // 2. Get the latest report for each site
-      const { data: latestReport } = await supabase
+  // Fire all per-site latest-report queries in parallel (replaces sequential for-loop)
+  const results = await Promise.all(
+    sites.map(site =>
+      adminClient
         .from('daily_reports')
         .select('report_id, remaining_stock_entries(material_name, quantity)')
         .eq('site_id', site.site_id)
         .eq('deleted', false)
         .order('report_date', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
+    )
+  )
 
-      if (latestReport?.remaining_stock_entries) {
-        latestReport.remaining_stock_entries.forEach((entry: any) => {
-          const material = entry.material_name.trim().toUpperCase()
-          // Parse quantity string (e.g., "50 bags" -> 50)
-          const qty = parseFloat(entry.quantity.match(/(\d+\.?\d*)/)?.[0] || '1')
-          aggregatedStock[material] = (aggregatedStock[material] || 0) + qty
-        })
-      }
+  const aggregatedStock: Record<string, number> = {}
+  results.forEach(({ data: latestReport }) => {
+    if (latestReport?.remaining_stock_entries) {
+      latestReport.remaining_stock_entries.forEach((entry: any) => {
+        const material = entry.material_name.trim().toUpperCase()
+        const qty = parseFloat(entry.quantity.match(/(\d+\.?\d*)/)?.[0] || '1')
+        aggregatedStock[material] = (aggregatedStock[material] || 0) + qty
+      })
     }
-  }
+  })
 
   return Object.entries(aggregatedStock)
     .sort((a, b) => b[1] - a[1])
@@ -253,6 +237,7 @@ export async function getRemainingStock() {
 }
 
 export async function getSiteReportCount() {
+  await verifyAdmin()
   const adminClient = createAdminClient()
 
   const { data: sites } = await adminClient
@@ -276,11 +261,20 @@ export async function getSiteReportCount() {
 }
 
 export async function getPendingSites() {
-  const supabase = await createClient()
+  await verifyAdmin()
+  const adminClient = createAdminClient()
   const todayStr = getCurrentISTDateString()
   const today = new Date(todayStr)
 
-  const { data: activeSites } = await supabase
+  // Helper to get YYYY-MM-DD without UTC shift
+  const toYYYYMMDD = (d: Date) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+
+  const { data: activeSites } = await adminClient
     .from('sites')
     .select('site_id, site_name, site_location, created_at')
     .eq('status', 'ACTIVE')
@@ -289,28 +283,32 @@ export async function getPendingSites() {
 
   // Earliest date to check (site creation or last 365 days)
   let earliestDate = new Date(Math.min(...activeSites.map(s => new Date(s.created_at).getTime())))
+  earliestDate.setHours(0, 0, 0, 0)
+
   const limitDate = new Date()
   limitDate.setDate(limitDate.getDate() - 365)
+  limitDate.setHours(0, 0, 0, 0)
+
   if (earliestDate < limitDate) earliestDate = limitDate
 
-  const earliestStr = earliestDate.toISOString().split('T')[0]
+  const earliestStr = toYYYYMMDD(earliestDate)
 
   // Fetch all reports and exemptions in range
-  const { data: allReports } = await supabase
+  const { data: allReports } = await adminClient
     .from('daily_reports')
     .select('site_id, report_date')
     .eq('deleted', false)
     .gte('report_date', earliestStr)
     .lte('report_date', todayStr)
 
-  const { data: allExemptions } = await supabase
+  const { data: allExemptions } = await adminClient
     .from('work_allocations')
     .select('site_id, allocation_date')
     .eq('work_allocated', false)
     .gte('allocation_date', earliestStr)
     .lte('allocation_date', todayStr)
 
-  const { data: allHolidays } = await supabase
+  const { data: allHolidays } = await adminClient
     .from('holidays')
     .select('date')
     .gte('date', earliestStr)
@@ -322,20 +320,21 @@ export async function getPendingSites() {
 
   const pending: any[] = []
   let checkDate = new Date(today)
+  checkDate.setHours(0, 0, 0, 0)
 
   while (checkDate >= earliestDate) {
-    const dStr = checkDate.toISOString().split('T')[0]
+    const dStr = toYYYYMMDD(checkDate)
     const isSunday = checkDate.getDay() === 0
 
     if (!isSunday && !holidaySet.has(dStr)) {
       activeSites.forEach(site => {
-        const siteCreated = new Date(site.created_at)
-        siteCreated.setHours(0,0,0,0)
-        
         const currentCheck = new Date(checkDate)
         currentCheck.setHours(0,0,0,0)
 
-        if (currentCheck >= siteCreated) {
+        const siteCreated = new Date(site.created_at)
+        siteCreated.setHours(0,0,0,0)
+
+        if (currentCheck.getTime() >= siteCreated.getTime()) {
           const key = `${site.site_id}_${dStr}`
           if (!reportSet.has(key) && !exemptionSet.has(key)) {
             pending.push({
@@ -355,10 +354,11 @@ export async function getPendingSites() {
 }
 
 export async function getExemptedSites() {
-  const supabase = await createClient()
+  await verifyAdmin()
+  const adminClient = createAdminClient()
   const today = getCurrentISTDateString()
 
-  const { data: exemptions } = await supabase
+  const { data: exemptions } = await adminClient
     .from('work_allocations')
     .select('site_id, sites(site_name, site_location)')
     .eq('allocation_date', today)
@@ -372,8 +372,9 @@ export async function getExemptedSites() {
 }
 
 export async function getAllSites() {
-  const supabase = await createClient()
-  const { data } = await supabase
+  await verifyAdmin()
+  const adminClient = createAdminClient()
+  const { data } = await adminClient
     .from('sites')
     .select('*')
     .order('site_name')
@@ -389,6 +390,7 @@ export async function getAllSites() {
 }
 
 export async function markNoWork(siteId: number, date: string, remarks: string) {
+  await verifyAdmin()
   const adminClient = createAdminClient()
   const { error } = await adminClient
     .from('work_allocations')
@@ -402,6 +404,7 @@ export async function markNoWork(siteId: number, date: string, remarks: string) 
 }
 
 export async function restoreWork(siteId: number, date: string) {
+  await verifyAdmin()
   const adminClient = createAdminClient()
   const { error } = await adminClient
     .from('work_allocations')
@@ -412,8 +415,9 @@ export async function restoreWork(siteId: number, date: string) {
 }
 
 export async function getSupervisors() {
-  const supabase = await createClient()
-  const { data } = await supabase
+  await verifyAdmin()
+  const adminClient = createAdminClient()
+  const { data } = await adminClient
     .from('users')
     .select('*')
     .eq('role', 'SUPERVISOR')
@@ -429,9 +433,8 @@ export async function getSupervisors() {
   })) || []
 }
 
-import { createAdminClient } from '@/lib/supabase/admin'
-
 export async function createSupervisor(payload: any) {
+  await verifyAdmin()
   const adminClient = createAdminClient()
   const supabase = await createClient()
   
@@ -486,7 +489,7 @@ export async function createSupervisor(payload: any) {
 
 
 export async function updateSupervisor(id: number, payload: any) {
-  console.log('[AuthSync] Received payload:', { id, ...payload, password: payload.password ? '****' : 'hidden' });
+  await verifyAdmin()
   const adminClient = createAdminClient()
   
   // 1. Fetch the OLD profile to get the current username
@@ -512,21 +515,16 @@ export async function updateSupervisor(id: number, payload: any) {
   const oldEmail = `${oldProfile.username.toLowerCase()}@cdsms.local`
   const newEmail = `${payload.username.toLowerCase()}@cdsms.local`
   
-  console.log(`[AuthSync] Syncing for ${oldEmail}. New email intended: ${newEmail}`);
-  
   try {
     const { data: authUsers } = await adminClient.auth.admin.listUsers()
     const authUser = authUsers.users.find(u => u.email?.toLowerCase() === oldEmail)
     
     if (authUser) {
-      console.log(`[AuthSync] Found Auth user: ${authUser.id}`);
       const authUpdate: any = {}
       if (payload.password) {
-        console.log(`[AuthSync] Updating password for ${authUser.id}`);
         authUpdate.password = payload.password
       }
       if (payload.username.toLowerCase() !== oldProfile.username.toLowerCase()) {
-        console.log(`[AuthSync] Updating email to ${newEmail}`);
         authUpdate.email = newEmail
       }
       
@@ -536,14 +534,13 @@ export async function updateSupervisor(id: number, payload: any) {
           console.error('[AuthSync] Supabase Auth Update Error:', authErr.message)
           return { error: `Authentication sync failed: ${authErr.message}` }
         }
-        console.log('[AuthSync] Auth update successful');
       }
     } else {
       console.warn(`[AuthSync] No Auth user found for email: ${oldEmail}`)
       return { error: 'Authentication account not found for this supervisor.' }
     }
   } catch (authErr: any) {
-    console.error('[AuthSync] Critical error:', authErr)
+    console.error('[AuthSync] Critical sync failure');
     return { error: 'A critical error occurred during authentication synchronization.' }
   }
 
@@ -558,11 +555,11 @@ export async function updateSupervisor(id: number, payload: any) {
 
 
 export async function deleteSupervisor(id: number) {
-  const supabase = await createClient()
+  await verifyAdmin()
   const adminClient = createAdminClient()
 
   // Find user to get username/email
-  const { data: userProfile } = await supabase
+  const { data: userProfile } = await adminClient
     .from('users')
     .select('username')
     .eq('id', id)
@@ -586,7 +583,7 @@ export async function deleteSupervisor(id: number) {
 
 
 export async function toggleUserStatus(id: number, currentStatus: boolean) {
-  const supabase = await createClient()
+  await verifyAdmin()
   const adminClient = createAdminClient()
   
   const { error } = await adminClient
@@ -596,7 +593,7 @@ export async function toggleUserStatus(id: number, currentStatus: boolean) {
 
   if (!error) {
     // Find the Auth User to ban/unban them immediately
-    const { data: userProfile } = await supabase
+    const { data: userProfile } = await adminClient
       .from('users')
       .select('username')
       .eq('id', id)
@@ -623,6 +620,7 @@ export async function toggleUserStatus(id: number, currentStatus: boolean) {
 }
 
 export async function createSite(payload: any) {
+  await verifyAdmin()
   const adminClient = createAdminClient()
   const { error } = await adminClient
     .from('sites')
@@ -637,6 +635,7 @@ export async function createSite(payload: any) {
 }
 
 export async function updateSite(id: number, payload: any) {
+  await verifyAdmin()
   const adminClient = createAdminClient()
   const { error } = await adminClient
     .from('sites')
@@ -652,6 +651,7 @@ export async function updateSite(id: number, payload: any) {
 }
 
 export async function deleteSite(id: number) {
+  await verifyAdmin()
   const adminClient = createAdminClient()
   const { error } = await adminClient
     .from('sites')
@@ -661,8 +661,9 @@ export async function deleteSite(id: number) {
 }
 
 export async function getAdminReports() {
-  const supabase = await createClient()
-  const { data } = await supabase
+  await verifyAdmin()
+  const adminClient = createAdminClient()
+  const { data } = await adminClient
     .from('daily_reports')
     .select(`
       *,
@@ -692,6 +693,7 @@ export async function getAdminReports() {
 }
 
 export async function deleteReport(id: number) {
+  await verifyAdmin()
   const adminClient = createAdminClient()
   const { error } = await adminClient
     .from('daily_reports')
@@ -701,6 +703,7 @@ export async function deleteReport(id: number) {
 }
 
 export async function restoreReport(id: number) {
+  await verifyAdmin()
   const adminClient = createAdminClient()
   const { error } = await adminClient
     .from('daily_reports')
@@ -710,8 +713,9 @@ export async function restoreReport(id: number) {
 }
 
 export async function getReportDetails(id: number) {
-  const supabase = await createClient()
-  const { data, error } = await supabase
+  await verifyAdmin()
+  const adminClient = createAdminClient()
+  const { data, error } = await adminClient
     .from('daily_reports')
     .select(`
       *,
@@ -762,8 +766,9 @@ export async function getReportDetails(id: number) {
 
 
 export async function getHolidays() {
-  const supabase = await createClient()
-  const { data } = await supabase
+  await verifyAuth()
+  const adminClient = createAdminClient()
+  const { data } = await adminClient
     .from('holidays')
     .select('*')
     .order('date', { ascending: true })
@@ -771,7 +776,8 @@ export async function getHolidays() {
 }
 
 export async function createHoliday(payload: any) {
-  const supabase = await createClient()
+  await verifyAdmin()
+  const adminClient = createAdminClient()
   const { date, toDate, name, description } = payload
   
   if (toDate && toDate !== date) {
@@ -796,17 +802,18 @@ export async function createHoliday(payload: any) {
       })
     }
     
-    const { error } = await supabase.from('holidays').insert(holidays)
+    const { error } = await adminClient.from('holidays').insert(holidays)
     return { error: error?.message }
   } else {
-    const { error } = await supabase.from('holidays').insert({ date, name, description })
+    const { error } = await adminClient.from('holidays').insert({ date, name, description })
     return { error: error?.message }
   }
 }
 
 export async function deleteHoliday(id: number) {
-  const supabase = await createClient()
-  const { error } = await supabase
+  await verifyAdmin()
+  const adminClient = createAdminClient()
+  const { error } = await adminClient
     .from('holidays')
     .delete()
     .eq('id', id)

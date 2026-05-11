@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
 import { createClient } from '@/lib/supabase/client';
@@ -34,12 +34,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const { user } = useAuth();
   const lastIdRef = useRef<string | null>(null);
   const previousCountRef = useRef<number>(0);
+  // Single Supabase client instance for the lifetime of this context
+  const supabase = useMemo(() => createClient(), []);
 
   const fetchNotifications = useCallback(async () => {
     if (!user || user.role !== 'ADMIN') return;
 
     try {
-      const supabase = createClient();
       const { data: responseData, error } = await supabase
         .from('notifications')
         .select('*')
@@ -93,7 +94,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const markAsRead = async (id: string) => {
     try {
-      const supabase = createClient();
       await supabase.from('notifications').update({ unread: false }).eq('id', parseInt(id));
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
       previousCountRef.current = Math.max(0, previousCountRef.current - 1);
@@ -104,7 +104,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const markAllAsRead = async () => {
     try {
-      const supabase = createClient();
       await supabase.from('notifications').update({ unread: false }).eq('unread', true);
       setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
       previousCountRef.current = 0;
@@ -115,7 +114,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const deleteNotification = async (id: string) => {
     try {
-      const supabase = createClient();
       await supabase.from('notifications').delete().eq('id', parseInt(id));
       setNotifications(prev => prev.filter(n => n.id !== id));
     } catch (error) {
@@ -129,7 +127,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     fetchNotifications();
 
-    const supabase = createClient();
     const channel = supabase
       .channel('realtime_notifications')
       .on(
@@ -182,7 +179,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, fetchNotifications]);
+  }, [user, fetchNotifications, supabase]);
 
   const unreadCount = notifications.filter(n => n.unread).length;
 
