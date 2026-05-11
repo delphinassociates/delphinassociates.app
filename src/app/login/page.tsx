@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Building2, ShieldAlert, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Building2, ShieldAlert, ArrowRight, Eye, EyeOff, User, Lock } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { login } from '@/app/actions/auth';
@@ -80,28 +80,32 @@ export default function LoginPage() {
 
             <div className="space-y-3">
               <Label className="text-xs font-display font-bold uppercase tracking-widest text-muted-foreground">Username</Label>
-              <Input 
-                id="username" 
-                type="text" 
-                value={username} 
-                onChange={(e) => setUsername(e.target.value)} 
-                required 
-                className="bg-muted/30 border-border h-12 lg:h-14 text-sm lg:text-base focus:border-accent transition-colors focus:bg-background shadow-sm"
-                placeholder="Ex: admin"
-              />
+              <div className="relative group">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-accent transition-colors" />
+                <Input 
+                  id="username" 
+                  type="text" 
+                  value={username} 
+                  onChange={(e) => setUsername(e.target.value)} 
+                  required 
+                  className="bg-muted/30 border-border h-12 lg:h-14 pl-11 text-sm lg:text-base focus:border-accent transition-colors focus:bg-background shadow-sm"
+                  placeholder="Enter your username"
+                />
+              </div>
             </div>
             
             <div className="space-y-3">
               <Label className="text-xs font-display font-bold uppercase tracking-widest text-muted-foreground">Password</Label>
-              <div className="relative">
+              <div className="relative group">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-accent transition-colors" />
                 <Input 
                   id="password" 
                   type={showPassword ? "text" : "password"}
                   value={password} 
                   onChange={(e) => setPassword(e.target.value)} 
                   required 
-                  className="bg-muted/30 border-border h-12 lg:h-14 pr-12 text-sm lg:text-base focus:border-accent transition-colors focus:bg-background shadow-sm"
-                  placeholder="••••••••"
+                  className="bg-muted/30 border-border h-12 lg:h-14 pl-11 pr-12 text-sm lg:text-base focus:border-accent transition-colors focus:bg-background shadow-sm"
+                  placeholder="Enter your password"
                 />
                 <button
                   type="button"
