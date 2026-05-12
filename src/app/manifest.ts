@@ -3,24 +3,37 @@ import { MetadataRoute } from 'next';
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Delphin Associates',
-    short_name: 'Delphin Associates',
+    short_name: 'Delphin',
     description: 'Enterprise Construction Daily Site Monitoring System',
     start_url: '/',
+    scope: '/',
+    id: 'com.delphin.associates',
     display: 'standalone',
-    background_color: '#ffffff',
+    display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
+    background_color: '#000000',
     theme_color: '#D4AF37',
     orientation: 'any',
-    scope: '/',
     dir: 'ltr',
     lang: 'en',
-    id: 'com.delphin.associates',
     categories: ['business', 'productivity', 'utilities'],
-    icons: [
+    prefer_related_applications: false,
+    shortcuts: [
       {
-        src: '/favicon.ico',
-        sizes: '32x32',
-        type: 'image/x-icon',
+        name: 'Admin Dashboard',
+        short_name: 'Dashboard',
+        description: 'Jump to the admin dashboard',
+        url: '/admin/dashboard',
+        icons: [{ src: '/appstore-images/android/launchericon-96x96.png', sizes: '96x96', type: 'image/png' }],
       },
+      {
+        name: 'Reports',
+        short_name: 'Reports',
+        description: 'View all site reports',
+        url: '/admin/reports',
+        icons: [{ src: '/appstore-images/android/launchericon-96x96.png', sizes: '96x96', type: 'image/png' }],
+      },
+    ],
+    icons: [
       {
         src: '/appstore-images/android/launchericon-48x48.png',
         sizes: '48x48',
@@ -48,15 +61,26 @@ export default function manifest(): MetadataRoute.Manifest {
         purpose: 'maskable',
       },
       {
-        src: '/icon-square.png',
-        sizes: '512x512',
-        type: 'image/png',
-      },
-      {
         src: '/appstore-images/android/launchericon-512x512.png',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any',
+      },
+    ],
+    screenshots: [
+      {
+        src: '/logo.png',
+        sizes: '1024x1024',
+        type: 'image/png',
+        form_factor: 'wide',
+        label: 'Delphin Associates Dashboard',
+      },
+      {
+        src: '/icon-square.png',
+        sizes: '512x512',
+        type: 'image/png',
+        form_factor: 'narrow',
+        label: 'Delphin Associates Mobile',
       },
     ],
   };

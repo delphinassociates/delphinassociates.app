@@ -25,6 +25,20 @@ export async function proxy(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
+  // ── Skip PWA and static assets ──
+  if (
+    pathname.includes('/sw.js') || 
+    pathname.includes('/manifest.json') || 
+    pathname.includes('/manifest.webmanifest') ||
+    pathname.includes('/workbox-') ||
+    pathname.includes('/worker-') ||
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api') ||
+    pathname.startsWith('/favicon.ico')
+  ) {
+    return supabaseResponse
+  }
+
   try {
     const { data: { user } } = await supabase.auth.getUser()
 

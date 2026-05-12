@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -H 0.0.0.0",
-    "build": "next build",
+    "dev": "next dev --webpack -H 0.0.0.0",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "test": "jest",
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
+    "@ducanh2912/next-pwa": "^10.2.9",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/montserrat": "^5.2.8",
     "@supabase/ssr": "^0.10.3",
