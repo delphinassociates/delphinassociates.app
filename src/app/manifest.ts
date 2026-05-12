@@ -3,7 +3,7 @@ import { MetadataRoute } from 'next';
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Delphin Associates',
-    short_name: 'Delphin',
+    short_name: 'Delphin Associates',
     description: 'Enterprise Construction Daily Site Monitoring System',
     start_url: '/',
     scope: '/',

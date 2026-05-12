@@ -13,8 +13,8 @@ const montserrat = Montserrat({ subsets: ["latin"], variable: "--font-montserrat
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#D4AF37" },
-    { media: "(prefers-color-scheme: dark)", color: "#D4AF37" },
+    { media: "(prefers-color-scheme: light)", color: "#F5F4F0" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -68,12 +68,12 @@ export const metadata: Metadata = {
       { url: "/appstore-images/ios/72.png", sizes: "72x72", type: "image/png" },
     ],
     other: [
-      { rel: "mask-icon", url: "/appstore-images/ios/512.png", color: "#D4AF37" },
+      { rel: "mask-icon", url: "/appstore-images/ios/512.png", color: "#000000" },
     ],
   },
   other: {
     "mobile-web-app-capable": "yes",
-    "msapplication-TileColor": "#D4AF37",
+    "msapplication-TileColor": "#000000",
     "msapplication-TileImage": "/appstore-images/ios/144.png",
     "msapplication-tap-highlight": "no",
   },
