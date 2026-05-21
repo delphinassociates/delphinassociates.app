@@ -1,20 +1,22 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { 
   getDashboardSummary, getPendingSites, getExemptedSites, 
   getRemainingStock, getAllSites, getLabourTrend, 
   getExpenseTrend, getMaterialTrend, getSiteReportCount, 
-  getRangeSummary, markNoWork, restoreWork 
+  getRangeSummary, markNoWork, restoreWork, exportAllDailyReports
 } from '@/app/actions/admin';
 import { createClient } from '@/lib/supabase/client';
 import { getCurrentISTDateString } from '@/lib/date-utils';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import * as XLSX from 'xlsx';
 import {
   Building2, Users, FileCheck, HardHat, Wallet, Hammer,
   TrendingUp, AlertTriangle, Info, MapPin, Package, BarChart2, PartyPopper,
-  CalendarRange, RotateCcw, ChevronLeft, ChevronRight, Calendar, RefreshCw, BarChart3
+  CalendarRange, RotateCcw, ChevronLeft, ChevronRight, Calendar, RefreshCw, BarChart3,
+  FileDown
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -61,6 +63,10 @@ export default function AdminDashboard() {
   const [fromDate, setFromDate] = useState(defFrom);
   const [toDate,   setToDate]   = useState(today);
   const [siteId,   setSiteId]   = useState<string>('all');
+
+  const [appliedFromDate, setAppliedFromDate] = useState(defFrom);
+  const [appliedToDate,   setAppliedToDate]   = useState(today);
+  const [appliedSiteId,   setAppliedSiteId]   = useState<string>('all');
   const [allSites, setAllSites] = useState<any[]>([]);
 
   const [summary,        setSummary]        = useState<any>(null);
@@ -74,6 +80,7 @@ export default function AdminDashboard() {
   const [remainingStock, setRemainingStock] = useState<any[]>([]);
   const [loading,        setLoading]        = useState(true);
   const [chartsLoading,  setChartsLoading]  = useState(false);
+  const [exporting,      setExporting]      = useState(false);
   const [pendingPage,    setPendingPage]    = useState(0);
   const PENDING_PAGE_SIZE = 5;
 
@@ -124,18 +131,20 @@ export default function AdminDashboard() {
   const fetchData = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     try {
-      const [sum, pend, ex, stock, sites] = await Promise.all([
+      const [sum, pend, ex, stock, sites, siteCnt] = await Promise.all([
         getDashboardSummary(),
         getPendingSites(),
         getExemptedSites(),
         getRemainingStock(),
-        getAllSites()
+        getAllSites(),
+        getSiteReportCount()
       ]);
       setSummary(sum);
       setPendingSites(pend);
       setExemptedSites(ex);
       setRemainingStock(stock);
       setAllSites(sites);
+      setSiteReportCount(siteCnt);
     } catch (err) {
       toast.error('Dashboard data fetch failed');
     } finally {
@@ -147,24 +156,27 @@ export default function AdminDashboard() {
   const fetchCharts = useCallback(async (isSilent = false) => {
     if (!isSilent) setChartsLoading(true);
     try {
-      const [lab, exp, mat, siteCnt, rangeSum] = await Promise.all([
-        getLabourTrend(fromDate, toDate, siteId),
-        getExpenseTrend(fromDate, toDate, siteId),
-        getMaterialTrend(fromDate, toDate, siteId),
-        getSiteReportCount(),
-        getRangeSummary(fromDate, toDate, siteId),
+      const [lab, exp, mat, rangeSum] = await Promise.all([
+        getLabourTrend(appliedFromDate, appliedToDate, appliedSiteId),
+        getExpenseTrend(appliedFromDate, appliedToDate, appliedSiteId),
+        getMaterialTrend(appliedFromDate, appliedToDate, appliedSiteId),
+        getRangeSummary(appliedFromDate, appliedToDate, appliedSiteId),
       ]);
       setLabourTrend(lab);
       setExpenseTrend(exp);
       setMaterialTrend(mat);
-      setSiteReportCount(siteCnt);
       setRangeSummary(rangeSum);
     } catch (err) {
       toast.error('Chart filter failed');
     } finally {
       if (!isSilent) setChartsLoading(false);
     }
-  }, [fromDate, toDate, siteId]);
+  }, [appliedFromDate, appliedToDate, appliedSiteId]);
+
+  const fetchChartsRef = useRef(fetchCharts);
+  useEffect(() => {
+    fetchChartsRef.current = fetchCharts;
+  }, [fetchCharts]);
 
   useEffect(() => {
     fetchData();
@@ -177,7 +189,7 @@ export default function AdminDashboard() {
         { event: '*', schema: 'public', table: 'daily_reports' },
         () => {
           fetchData(true);
-          fetchCharts(true);
+          fetchChartsRef.current(true);
         }
       )
       .on(
@@ -206,24 +218,202 @@ export default function AdminDashboard() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchData, fetchCharts]);
+  }, [fetchData]);
 
   // Automatic chart updates on filter change
   useEffect(() => {
     fetchCharts();
   }, [fetchCharts]);
 
+  const handleApplyFilter = () => {
+    setAppliedFromDate(fromDate);
+    setAppliedToDate(toDate);
+    setAppliedSiteId(siteId);
+  };
+
   const resetDates = () => {
     setFromDate(defFrom);
     setToDate(today);
     setSiteId('all');
+    setAppliedFromDate(defFrom);
+    setAppliedToDate(today);
+    setAppliedSiteId('all');
+  };
+
+  const handleExportExcel = async () => {
+    if (exporting) return;
+    setExporting(true);
+    const toastId = toast.loading('Extracting database...');
+    try {
+      const rawReports = await exportAllDailyReports();
+      if (!rawReports || rawReports.length === 0) {
+        toast.dismiss(toastId);
+        toast.info('No daily reports found to export.');
+        setExporting(false);
+        return;
+      }
+
+      toast.loading('Formatting worksheets...', { id: toastId });
+
+      // Sheet 1: Overview
+      const overviewData = rawReports.map(r => {
+        const totalLabour = r.labour_entries?.reduce((sum: number, le: any) => sum + (le.count || 0), 0) || 0;
+        const totalMaterialExpense = r.material_expense_entries?.reduce((sum: number, me: any) => sum + Number(me.amount || 0), 0) || 0;
+        const totalLabourAdvance = r.labour_advance_entries?.reduce((sum: number, la: any) => sum + Number(la.amount || 0), 0) || 0;
+        
+        const siteData = r.site as any;
+        const siteName = Array.isArray(siteData) ? siteData[0]?.site_name : siteData?.site_name;
+
+        const supervisorData = r.supervisor as any;
+        const supervisorName = Array.isArray(supervisorData) ? supervisorData[0]?.full_name : supervisorData?.full_name;
+
+        return {
+          'Report ID': r.report_id,
+          'Date': r.report_date,
+          'Site Name': siteName || 'N/A',
+          'Supervisor': supervisorName || 'N/A',
+          'Work Progress': r.work_progress || '',
+          'Remarks/Obstacles': r.remarks || '',
+          'Total Labourers': totalLabour,
+          'Material Expense (₹)': totalMaterialExpense,
+          'Labour Advance (₹)': totalLabourAdvance
+        };
+      });
+
+      // Sheet 2: Labour Entries
+      const labourData: any[] = [];
+      rawReports.forEach(r => {
+        const siteData = r.site as any;
+        const siteName = Array.isArray(siteData) ? siteData[0]?.site_name : siteData?.site_name;
+        r.labour_entries?.forEach((le: any) => {
+          labourData.push({
+            'Report ID': r.report_id,
+            'Date': r.report_date,
+            'Site Name': siteName || 'N/A',
+            'Labour Type': le.labour_type || 'N/A',
+            'Count': le.count || 0
+          });
+        });
+      });
+
+      // Sheet 3: Material Inwards
+      const inwardData: any[] = [];
+      rawReports.forEach(r => {
+        const siteData = r.site as any;
+        const siteName = Array.isArray(siteData) ? siteData[0]?.site_name : siteData?.site_name;
+        r.material_inward_entries?.forEach((mi: any) => {
+          inwardData.push({
+            'Report ID': r.report_id,
+            'Date': r.report_date,
+            'Site Name': siteName || 'N/A',
+            'Material Name': mi.material_name || 'N/A',
+            'Quantity': mi.quantity || 0
+          });
+        });
+      });
+
+      // Sheet 4: Material Expenses
+      const expenseData: any[] = [];
+      rawReports.forEach(r => {
+        const siteData = r.site as any;
+        const siteName = Array.isArray(siteData) ? siteData[0]?.site_name : siteData?.site_name;
+        r.material_expense_entries?.forEach((me: any) => {
+          expenseData.push({
+            'Report ID': r.report_id,
+            'Date': r.report_date,
+            'Site Name': siteName || 'N/A',
+            'Material/Item Name': me.material_name || 'N/A',
+            'Amount (₹)': me.amount || 0
+          });
+        });
+      });
+
+      // Sheet 5: Labour Advances
+      const advanceData: any[] = [];
+      rawReports.forEach(r => {
+        const siteData = r.site as any;
+        const siteName = Array.isArray(siteData) ? siteData[0]?.site_name : siteData?.site_name;
+        r.labour_advance_entries?.forEach((la: any) => {
+          advanceData.push({
+            'Report ID': r.report_id,
+            'Date': r.report_date,
+            'Site Name': siteName || 'N/A',
+            'Labour/Worker Name': la.labour_name || 'N/A',
+            'Amount (₹)': la.amount || 0
+          });
+        });
+      });
+
+      // Sheet 6: Remaining Stock
+      const stockData: any[] = [];
+      rawReports.forEach(r => {
+        const siteData = r.site as any;
+        const siteName = Array.isArray(siteData) ? siteData[0]?.site_name : siteData?.site_name;
+        r.remaining_stock_entries?.forEach((rs: any) => {
+          stockData.push({
+            'Report ID': r.report_id,
+            'Date': r.report_date,
+            'Site Name': siteName || 'N/A',
+            'Material Name': rs.material_name || 'N/A',
+            'Quantity/Stock': rs.quantity || ''
+          });
+        });
+      });
+
+      toast.loading('Compiling workbook...', { id: toastId });
+
+      const wb = XLSX.utils.book_new();
+
+      const sheets = [
+        { data: overviewData, name: 'Overview' },
+        { data: labourData, name: 'Labour Entries' },
+        { data: inwardData, name: 'Material Inwards' },
+        { data: expenseData, name: 'Material Expenses' },
+        { data: advanceData, name: 'Labour Advances' },
+        { data: stockData, name: 'Remaining Stock' }
+      ];
+
+      sheets.forEach(sheet => {
+        const ws = XLSX.utils.json_to_sheet(sheet.data);
+        
+        // Auto-fit column widths
+        if (sheet.data.length > 0) {
+          const keys = Object.keys(sheet.data[0]);
+          ws['!cols'] = keys.map(key => {
+            let maxLen = key.length;
+            sheet.data.forEach((row: any) => {
+              const val = row[key];
+              if (val !== null && val !== undefined) {
+                const valStr = String(val);
+                if (valStr.length > maxLen) {
+                  maxLen = valStr.length;
+                }
+              }
+            });
+            return { wch: maxLen + 3 };
+          });
+        }
+        
+        XLSX.utils.book_append_sheet(wb, ws, sheet.name);
+      });
+
+      const todayStr = getCurrentISTDateString();
+      XLSX.writeFile(wb, `CDSMS_Master_Daily_Reports_${todayStr}.xlsx`);
+
+      toast.success('Export completed successfully!', { id: toastId });
+    } catch (err: any) {
+      console.error('[ExcelExport] Error:', err);
+      toast.error('Export failed: ' + (err.message || 'Unknown error'), { id: toastId });
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="flex flex-col items-center opacity-50">
-          <div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin mb-4" />
+          <div className="loader mb-4" style={{ width: '40px', height: '40px', '--loader-thickness': '6px' } as React.CSSProperties} />
           <p className="font-display uppercase tracking-widest text-xs">Initializing</p>
         </div>
       </div>
@@ -258,11 +448,32 @@ export default function AdminDashboard() {
   return (
     <div className="max-w-[1600px] mx-auto animate-in fade-in duration-500">
       <div className="md:px-10">
-        <PageHeader
-          title="Executive Overview"
-          description="Real-time operational intelligence and site metrics"
-          breadcrumbs={['Intelligence', 'Command Center']}
-        />
+        <div className="flex items-start justify-between gap-4 mb-2">
+          <div className="flex-1">
+            <PageHeader
+              title="Executive Overview"
+              description="Real-time operational intelligence and site metrics"
+              breadcrumbs={['Intelligence', 'Command Center']}
+            />
+          </div>
+          <div className="flex-shrink-0 pt-6 md:pt-8">
+            <Button
+              onClick={handleExportExcel}
+              disabled={exporting}
+              className="h-9 w-9 md:h-11 md:w-auto md:px-6 bg-gradient-to-r from-[#D4AF37] to-[#B89220] hover:from-[#E5C048] hover:to-[#C9A32F] text-black hover:text-black font-display text-[11px] font-black uppercase tracking-[0.15em] shadow-xl shadow-[#D4AF37]/15 rounded-lg md:rounded-xl transition-all active:scale-[0.97] flex items-center justify-center gap-2 border border-[#D4AF37]/20"
+              title="Export Master Excel"
+            >
+              {exporting ? (
+                <RefreshCw className="w-4 h-4 md:w-[15px] md:h-[15px] animate-spin text-black" />
+              ) : (
+                <FileDown className="w-4 h-4 md:w-[15px] md:h-[15px] text-black" />
+              )}
+              <span className="hidden md:inline">
+                {exporting ? 'Compiling...' : 'Export Master Excel'}
+              </span>
+            </Button>
+          </div>
+        </div>
         <KpiStrip items={statItems} />
 
         {/* ── Holiday banner (full width, below KPIs) ── */}
@@ -374,7 +585,7 @@ export default function AdminDashboard() {
                 {/* Actions Group (Right) */}
                 <div className="flex items-center gap-3 lg:border-l lg:pl-5 border-border/30">
                   <Button
-                    onClick={() => fetchCharts()}
+                    onClick={handleApplyFilter}
                     disabled={chartsLoading}
                     className="flex-1 lg:flex-none h-10 px-8 bg-accent text-background hover:bg-accent/90 font-display text-[10px] font-black uppercase tracking-[0.15em] shadow-lg shadow-accent/20 rounded-xl transition-all active:scale-[0.97]"
                   >

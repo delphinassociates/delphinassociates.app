@@ -244,3 +244,88 @@
     background: transparent;
   }
 }
+
+/* ─── Premium Mobile Snackbar Tuning ─── */
+@media (max-width: 767px) {
+  /* Offset toaster to sit elegantly above the mobile dock and limit its width to be narrower than the navigation bar */
+  [data-sonner-toaster] {
+    --y-position: 84px !important;
+    bottom: 84px !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+    width: 230px !important;
+    min-width: 230px !important;
+    max-width: 230px !important;
+  }
+
+  [data-sonner-toaster] [data-toast] {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 10px 12px !important;
+  }
+
+  /* Reduce font size slightly for compact narrow mobile toasts and force single line */
+  [data-sonner-toaster] [data-toast] [data-title] {
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  [data-sonner-toaster] [data-toast] [data-description] {
+    font-size: 9px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+}
+
+/* ─── Premium Rounded-Edge concentric Spinner ─── */
+.loader {
+  --loader-color: var(--accent-dark, #ffa500e6);
+  --loader-thickness: 8px;
+  width: 50px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: var(--loader-thickness) solid #0000;
+  border-right-color: var(--loader-color);
+  background: 
+    radial-gradient(farthest-side, var(--loader-color) 94%, #0000) 85.4% 14.6% / var(--loader-thickness) var(--loader-thickness) no-repeat,
+    radial-gradient(farthest-side, var(--loader-color) 94%, #0000) 85.4% 85.4% / var(--loader-thickness) var(--loader-thickness) no-repeat;
+  background-origin: border-box;
+  background-clip: border-box;
+  position: relative;
+  animation: l24 1s infinite linear;
+}
+
+.loader:before,
+.loader:after {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--loader-thickness));
+  border-radius: 50%;
+  border: var(--loader-thickness) solid #0000;
+  border-right-color: var(--loader-color);
+  background: 
+    radial-gradient(farthest-side, var(--loader-color) 94%, #0000) 85.4% 14.6% / var(--loader-thickness) var(--loader-thickness) no-repeat,
+    radial-gradient(farthest-side, var(--loader-color) 94%, #0000) 85.4% 85.4% / var(--loader-thickness) var(--loader-thickness) no-repeat;
+  background-origin: border-box;
+  background-clip: border-box;
+}
+
+.loader:before {
+  --loader-color: var(--accent, #ffa50099);
+  animation: l24 2s infinite linear;
+}
+
+.loader:after {
+  --loader-color: var(--accent-light, #ffa5004d);
+  animation: l24 4s infinite linear;
+}
+
+@keyframes l24 {
+  100% { transform: rotate(1turn); }
+}

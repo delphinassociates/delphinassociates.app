@@ -281,12 +281,12 @@ export async function getPendingSites() {
 
   if (!activeSites || activeSites.length === 0) return []
 
-  // Earliest date to check (site creation or last 365 days)
+  // Earliest date to check (site creation or last 30 days compliance window)
   let earliestDate = new Date(Math.min(...activeSites.map(s => new Date(s.created_at).getTime())))
   earliestDate.setHours(0, 0, 0, 0)
 
   const limitDate = new Date()
-  limitDate.setDate(limitDate.getDate() - 365)
+  limitDate.setDate(limitDate.getDate() - 30)
   limitDate.setHours(0, 0, 0, 0)
 
   if (earliestDate < limitDate) earliestDate = limitDate
@@ -819,6 +819,35 @@ export async function deleteHoliday(id: number) {
     .eq('id', id)
   return { error: error?.message }
 }
+
+export async function exportAllDailyReports() {
+  await verifyAdmin()
+  const adminClient = createAdminClient()
+  const { data, error } = await adminClient
+    .from('daily_reports')
+    .select(`
+      report_id,
+      report_date,
+      work_progress,
+      remarks,
+      site:sites(site_name),
+      supervisor:users(full_name),
+      labour_entries(labour_type, count),
+      material_inward_entries(material_name, quantity),
+      material_expense_entries(material_name, amount),
+      labour_advance_entries(labour_name, amount),
+      remaining_stock_entries(material_name, quantity)
+    `)
+    .eq('deleted', false)
+    .order('report_date', { ascending: false })
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return data || []
+}
+
 
 
 

@@ -132,7 +132,7 @@ Generated on ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
     return (
       <div className="flex h-full items-center justify-center">
         <div className="flex flex-col items-center opacity-50">
-          <div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin mb-4"></div>
+          <div className="loader mb-4" style={{ width: '40px', height: '40px', '--loader-thickness': '6px' } as React.CSSProperties}></div>
           <p className="font-display uppercase tracking-widest text-xs">Initializing</p>
         </div>
       </div>

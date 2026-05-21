@@ -7,6 +7,8 @@ import { NotificationProvider } from "@/context/NotificationContext";
 import { DevToolsProtection } from "@/components/ui/custom/DevToolsProtection";
 import { PWAInstallPrompt } from "@/components/ui/custom/PWAInstallPrompt";
 import { PWAUpdateHandler } from "@/components/ui/custom/PWAUpdateHandler";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const montserrat = Montserrat({ subsets: ["latin"], variable: "--font-montserrat" });
@@ -96,11 +98,13 @@ export default function RootLayout({
         <AuthProvider>
           <NotificationProvider>
             {children}
-            <Toaster position="top-right" theme="dark" />
+            <Toaster position="bottom-center" theme="dark" />
             <PWAInstallPrompt />
             <PWAUpdateHandler />
           </NotificationProvider>
         </AuthProvider>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
